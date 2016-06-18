@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">NewsApp</string>
+
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="empty_list">No data available. Please make sure that there is an active network connection. When ready, swipe down to refresh.</string>
+</resources>
