@@ -27,10 +27,16 @@ import com.example.byunghwa.newsapp.model.News;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
+import org.xmlpull.v1.XmlPullParserFactory;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -52,6 +58,7 @@ public class NewsListFragment extends Fragment implements NewsListRecyclerViewAd
     private CustomStaggeredGridLayoutManager manager;
 
     private static ArrayList<News> mNewsList;
+    private FetchNewsAsyncTask asyncTask;
 
     public NewsListFragment() {
         // Required empty public constructor
@@ -60,14 +67,11 @@ public class NewsListFragment extends Fragment implements NewsListRecyclerViewAd
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (savedInstanceState == null) {
-            fetchNewsList();
+
+        if (savedInstanceState != null && savedInstanceState.containsKey("newslist")) {
+            mNewsList = savedInstanceState.getParcelableArrayList("newslist");
         } else {
-            if (savedInstanceState.containsKey("newslist")) {
-                mNewsList = savedInstanceState.getParcelableArrayList("newslist");
-            } else {
-                fetchNewsList();
-            }
+            fetchNewsList();
         }
     }
 
@@ -80,7 +84,8 @@ public class NewsListFragment extends Fragment implements NewsListRecyclerViewAd
     }
 
     private void fetchNewsList() {
-        new FetchNewsAsyncTask().execute();
+        asyncTask = new FetchNewsAsyncTask();
+        asyncTask.execute();
     }
 
     @Override
@@ -88,46 +93,7 @@ public class NewsListFragment extends Fragment implements NewsListRecyclerViewAd
                              Bundle savedInstanceState) {
         // Inflate the layout for this fragment
         View rootView = inflater.inflate(R.layout.fragment_news_list, container, false);
-        initRecyclerView(rootView);
-        initSwipeRefreshLayout(rootView);
-        initEmptyView(rootView);
-        initToolbar(rootView);
-        setOnClickListener();
-        return rootView;
-    }
 
-    private void initToolbar(View rootView) {
-        Toolbar toolbar = (Toolbar) rootView.findViewById(R.id.toolbar_main);
-        AppCompatActivity activity = (AppCompatActivity) getActivity();
-        activity.setSupportActionBar(toolbar);
-        ActionBar actionBar = activity.getSupportActionBar();
-        actionBar.setTitle(getResources().getString(R.string.app_name));
-    }
-
-    private void setOnClickListener() {
-        adapter.setOnItemClickListener(this);
-    }
-
-    private void initEmptyView(View rootView) {
-        emptyView = (TextView) rootView.findViewById(R.id.empty_view);
-    }
-
-    private void initSwipeRefreshLayout(View rootView) {
-        mSwipeRefreshLayout = (SwipeRefreshLayout) rootView.findViewById(R.id.swipe_refresh_layout);
-        mSwipeRefreshLayout.setRefreshing(true);
-        /*
-         note that when you use a SwipeRefreshLayout, you have to set this OnRefreshListener to it
-         or the indicator wouldn't show up
-          */
-        mSwipeRefreshLayout.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
-            @Override
-            public void onRefresh() {
-                fetchNewsList();
-            }
-        });
-    }
-
-    private void initRecyclerView(View rootView) {
         recyclerView = (RecyclerView) rootView.findViewById(R.id.recycler);
 
         recyclerView.setHasFixedSize(true);// setting this to true will prevent the whole list from refreshing when
@@ -144,12 +110,48 @@ public class NewsListFragment extends Fragment implements NewsListRecyclerViewAd
             Log.i("NewsListFrag", "restoring list...");
             adapter.swapData(mNewsList);
         }
+
+        mSwipeRefreshLayout = (SwipeRefreshLayout) rootView.findViewById(R.id.swipe_refresh_layout);
+        mSwipeRefreshLayout.setRefreshing(true);
+        /*
+         note that when you use a SwipeRefreshLayout, you have to set this OnRefreshListener to it
+         or the indicator wouldn't show up
+          */
+        mSwipeRefreshLayout.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
+            @Override
+            public void onRefresh() {
+                fetchNewsList();
+            }
+        });
+
+        emptyView = (TextView) rootView.findViewById(R.id.empty_view);
+
+        Toolbar toolbar = (Toolbar) rootView.findViewById(R.id.toolbar_main);
+        AppCompatActivity activity = (AppCompatActivity) getActivity();
+        activity.setSupportActionBar(toolbar);
+        ActionBar actionBar = activity.getSupportActionBar();
+        actionBar.setTitle(getResources().getString(R.string.app_name));
+
+        setOnClickListener();
+        return rootView;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (asyncTask != null) {
+            asyncTask.cancel(true);
+        }
+    }
+
+    private void setOnClickListener() {
+        adapter.setOnItemClickListener(this);
     }
 
     @Override
     public void onItemClick(View view, int clickedItemPosition) {
         if (mNewsList != null) {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(mNewsList.get(clickedItemPosition).getUrl()));
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(mNewsList.get(clickedItemPosition).getLink()));
             if (intent.resolveActivity(getActivity().getPackageManager()) != null) {
                 startActivity(intent);
             }
@@ -160,14 +162,33 @@ public class NewsListFragment extends Fragment implements NewsListRecyclerViewAd
 
         @Override
         protected ArrayList<News> doInBackground(Void... params) {
-            HttpURLConnection urlConnection = null;
-            JSONObject json = null;
             JSONArray jsonArray = null;
             ArrayList<News> newsArrayList = null;
+            HttpURLConnection connection = null;
             try {
-                URL url = new URL("https://ajax.googleapis.com/ajax/services/feed/find?v=1.0&q=animal");
-                urlConnection = (HttpURLConnection) url.openConnection();
-                InputStream in = new BufferedInputStream(urlConnection.getInputStream());
+                URL url = new URL("https://ajax.googleapis.com/ajax/services/feed/find?" +
+                        "v=1.0&q=animal");
+                connection = (HttpURLConnection) url.openConnection();
+
+                String line;
+                StringBuilder builder = new StringBuilder();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                while((line = reader.readLine()) != null) {
+                    builder.append(line);
+                }
+
+                JSONObject json = new JSONObject(builder.toString());
+
+                json = json.getJSONObject("responseData");
+                jsonArray = json.getJSONArray("entries");
+                json = jsonArray.getJSONObject(6);
+                String feedUrl = json.getString("url");
+
+                Log.i("NewsListFrag", "feed url: " + feedUrl);
+
+                URL urlSecond = new URL(feedUrl);
+                connection = (HttpURLConnection) urlSecond.openConnection();
+                InputStream in = new BufferedInputStream(connection.getInputStream());
                 String response = "";
 
                 //start listening to the stream
@@ -176,11 +197,10 @@ public class NewsListFragment extends Fragment implements NewsListRecyclerViewAd
                 //process the stream and store it in StringBuilder
                 while (inStream.hasNextLine())
                     response += (inStream.nextLine());
-                json = new JSONObject(response);
-                json = json.getJSONObject("responseData");
-                jsonArray = json.getJSONArray("entries");
-                newsArrayList = jsonArrayToNewsArrayList(jsonArray);
+
                 Log.i("NewsListFrag", "response: " + response);
+
+                newsArrayList = feedXMLToNewsArrayList(response);
             } catch (JSONException e) {
                 e.printStackTrace();
             } catch (MalformedURLException e) {
@@ -188,34 +208,73 @@ public class NewsListFragment extends Fragment implements NewsListRecyclerViewAd
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
-                urlConnection.disconnect();
+                if (connection != null) {
+                    connection.disconnect();
+                }
             }
 
             return newsArrayList;
         }
 
-        private ArrayList<News> jsonArrayToNewsArrayList(JSONArray jsonArray) throws JSONException {
-            JSONObject jsonObject;
-            ArrayList<News> newsArrayList = new ArrayList<>();
-            News news;
-            for (int i=jsonArray.length()-1;i>=0;i--) {
-                jsonObject = jsonArray.getJSONObject(i);
-                news = new News();
-                news.setTitle(jsonObject.getString("title"));
-                Log.i("NewsListFrag", "title: " + jsonObject.getString("title"));
-                news.setContentSnippet(jsonObject.getString("contentSnippet"));
-                Log.i("NewsListFrag", "content snippet: " + jsonObject.getString("contentSnippet"));
-                news.setUrl(jsonObject.getString("url"));
-                Log.i("NewsListFrag", "url: " + jsonObject.getString("url"));
+        private ArrayList<News> feedXMLToNewsArrayList(String response) {
+            XmlPullParserFactory factory;
+            ArrayList<News> arrayList = null;
+            try {
+                factory = XmlPullParserFactory.newInstance();
+                factory.setNamespaceAware(true);
+                XmlPullParser xpp = factory.newPullParser();
 
-                newsArrayList.add(news);
+                xpp.setInput(new StringReader(response));
+                int eventType = xpp.getEventType();
+                News news = null;
+                arrayList = new ArrayList<>();
+                String text = null;
+                int counter = 0;
+                while (eventType != XmlPullParser.END_DOCUMENT) {
+                    if(eventType == XmlPullParser.START_DOCUMENT) {
+                        Log.i("NewsListFrag", "Start document");
+                    } else if(eventType == XmlPullParser.START_TAG) {
+                        Log.i("NewsListFrag", "Start tag: " + xpp.getName());
+                        if (xpp.getName().equals("item")) {
+                            counter++;
+                            news = new News();
+                        }
+                    } else if(eventType == XmlPullParser.END_TAG) {
+                        Log.i("NewsListFrag", "End tag: " + xpp.getName());
+                        if (counter != 0) {
+                            if (xpp.getName().equals("title")) {
+                                news.setTitle(text);
+                            }
+                            if (xpp.getName().equals("pubDate")) {
+                                news.setPubDate(text);
+                            }
+                            if (xpp.getName().equals("link")) {
+                                news.setLink(text);
+                            }
+                            if (xpp.getName().equals("item")) {
+                                arrayList.add(news);
+                            }
+                        }
+
+                    } else if(eventType == XmlPullParser.TEXT) {
+                        Log.i("NewsListFrag", "Text: " + xpp.getText());
+                        text = xpp.getText();
+                    }
+                    eventType = xpp.next();
+                }
+            } catch (XmlPullParserException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-            return newsArrayList;
+
+            return arrayList;
         }
 
         @Override
         protected void onPostExecute(ArrayList<News> newsArrayList) {
             mNewsList = newsArrayList;
+            //Log.i("NewsListFrag", "news list size: " + newsArrayList.size());
             adapter.swapData(newsArrayList);
             mSwipeRefreshLayout.setRefreshing(false);
             if (newsArrayList != null) {

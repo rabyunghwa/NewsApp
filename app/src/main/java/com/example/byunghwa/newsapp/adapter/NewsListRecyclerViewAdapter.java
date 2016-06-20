@@ -49,11 +49,8 @@ public class NewsListRecyclerViewAdapter extends RecyclerView.Adapter<NewsListRe
 
     @Override
     public void onBindViewHolder(ViewHolder holder, int position) {
-        // remove "<b>" "</b>"
-        String removedTitle = mList.get(position).getTitle().replaceAll("</?br?>", "");
-        String removedContentSnippet = mList.get(position).getContentSnippet().replaceAll("</?br?>", "");
-        holder.title.setText(removedTitle);
-        holder.contentSnippet.setText(removedContentSnippet);
+        holder.title.setText(mList.get(position).getTitle());
+        holder.pubDate.setText(mList.get(position).getPubDate());
 
         holder.itemView.setTag(position);
     }
@@ -64,7 +61,6 @@ public class NewsListRecyclerViewAdapter extends RecyclerView.Adapter<NewsListRe
             Log.i("adapter", "item count: " + mList.size());
             return mList.size();
         }
-
         return 0;
     }
 
@@ -79,12 +75,12 @@ public class NewsListRecyclerViewAdapter extends RecyclerView.Adapter<NewsListRe
 
     protected static class ViewHolder extends RecyclerView.ViewHolder {
         public TextView title;
-        public TextView contentSnippet;
+        public TextView pubDate;
 
         public ViewHolder(View itemView) {
             super(itemView);
             title = (TextView) itemView.findViewById(R.id.title);
-            contentSnippet = (TextView) itemView.findViewById(R.id.contentSnippet);
+            pubDate = (TextView) itemView.findViewById(R.id.pubDate);
         }
     }
 
